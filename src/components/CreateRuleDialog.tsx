@@ -76,33 +76,23 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
   const addMatchingLogic = () => {
     if (groups.length < 2) return
     const anchor = (anchorGroupId || groups[0]?.id) ?? ""
-    setMatchingLogics((prev) => [
-      ...prev,
-      { name: `Matching ${prev.length + 1}`, anchorGroupId: anchor, links: [] },
-    ])
-    if (!anchorGroupId) setAnchorGroupId(anchor)
-  }
-
-  const addLinkToMatching = (logicIndex: number) => {
-    const logic = matchingLogics[logicIndex]
-    if (!logic || groups.length < 2) return
     const fromId = groups[0].id
     const toId = groups.find((g) => g.id !== fromId)?.id ?? groups[1].id
-    setMatchingLogics((prev) => {
-      const next = [...prev]
-      next[logicIndex] = {
-        ...next[logicIndex],
+    setMatchingLogics((prev) => [
+      ...prev,
+      {
+        name: `Matching Link ${prev.length + 1}`,
+        anchorGroupId: anchor,
         links: [
-          ...next[logicIndex].links,
           {
             fromGroupId: fromId,
             toGroupId: toId,
             criteriaVariations: [{ identifierFields: [{ fromField: "poNumber", toField: "poNumber" }] }],
           },
         ],
-      }
-      return next
-    })
+      },
+    ])
+    if (!anchorGroupId) setAnchorGroupId(anchor)
   }
 
   const removeMatchingLogic = (logicIndex: number) => {
@@ -291,6 +281,16 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
     })
   }
 
+  /** Set the single comparison field for a group (radio: one field per group). */
+  const setComparisonFieldForGroup = (compIndex: number, groupId: string, fieldPath: string, label: string) => {
+    setComparisonLogics((prev) => {
+      const next = [...prev]
+      const rest = next[compIndex].compareFields.filter((f) => f.groupId !== groupId)
+      next[compIndex].compareFields = [...rest, { groupId, fieldPath, label }]
+      return next
+    })
+  }
+
   const handleCreate = () => {
     if (!ruleName.trim() || groups.length === 0) return
     addRule({
@@ -421,162 +421,143 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
               </Select>
             </div>
             <p className="text-sm text-muted-foreground">
-              Add matching logics; each has links. For each link pick from/to groups and define one or more criteria variations (each variation = set of field pairs to match on).
+              Add matching links. For each link pick from/to groups and define one or more criteria variations (each variation = set of field pairs to match on).
             </p>
             <Button type="button" variant="outline" size="sm" onClick={() => addMatchingLogic()} disabled={groups.length < 2}>
               <Plus className="h-4 w-4 mr-1" />
-              Add matching logic
+              Add Matching link
             </Button>
-            {matchingLogics.map((logic, logicIdx) => (
-              <div key={logicIdx} className="rounded-lg border-2 border-primary/20 p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={logic.name}
-                    onChange={(e) =>
-                      setMatchingLogics((prev) => {
-                        const n = [...prev]
-                        n[logicIdx] = { ...n[logicIdx], name: e.target.value }
-                        return n
-                      })
-                    }
-                    placeholder="Matching logic name (e.g. By PO number)"
-                    className="font-medium flex-1"
-                  />
-                  <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => removeMatchingLogic(logicIdx)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Links (from group → to group). Each link can have multiple criteria variations.</p>
-                  {logic.links.map((link, linkIdx) => {
-                    const fromGroup = groups.find((g) => g.id === link.fromGroupId)
-                    const toGroup = groups.find((g) => g.id === link.toGroupId)
-                    const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
-                    const toType = toGroup ? getDocTypeForGroup(toGroup) : "INV"
-                    return (
-                      <div key={linkIdx} className="rounded border bg-muted/30 p-3 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="grid grid-cols-2 gap-2 flex-1">
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">From group</p>
-                              <Select
-                                value={link.fromGroupId}
-                                onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, v, link.toGroupId)}
-                              >
-                                <SelectTrigger className="w-full bg-card">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {groups.map((g) => (
-                                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">To group</p>
-                              <Select
-                                value={link.toGroupId}
-                                onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, link.fromGroupId, v)}
-                              >
-                                <SelectTrigger className="w-full bg-card">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {groups.map((g) => (
-                                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+            {matchingLogics.map((logic, logicIdx) => {
+              const link = logic.links[0]
+              if (!link) return null
+              const fromGroup = groups.find((g) => g.id === link.fromGroupId)
+              const toGroup = groups.find((g) => g.id === link.toGroupId)
+              const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
+              const toType = toGroup ? getDocTypeForGroup(toGroup) : "INV"
+              const linkIdx = 0
+              return (
+                <div key={logicIdx} className="rounded-lg border-2 border-primary/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">Matching Link {logicIdx + 1}</span>
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => removeMatchingLogic(logicIdx)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">From group → To group. Each link can have multiple criteria variations.</p>
+                    <div className="rounded border bg-muted/30 p-3 space-y-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">From group</p>
+                          <Select
+                            value={link.fromGroupId}
+                            onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, v, link.toGroupId)}
+                          >
+                            <SelectTrigger className="w-full bg-card">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {groups.map((g) => (
+                                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">To group</p>
+                          <Select
+                            value={link.toGroupId}
+                            onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, link.fromGroupId, v)}
+                          >
+                            <SelectTrigger className="w-full bg-card">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {groups.map((g) => (
+                                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {link.criteriaVariations.map((variation, varIdx) => (
+                        <div key={varIdx} className="rounded bg-muted/20 p-2 space-y-2 ml-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-muted-foreground">Variation {varIdx + 1}</span>
+                            {link.criteriaVariations.length > 1 && (
+                              <Button type="button" variant="ghost" size="sm" className="text-destructive h-7 text-xs" onClick={() => removeVariationFromLink(logicIdx, linkIdx, varIdx)}>
+                                <Trash2 className="h-3 w-3 mr-1" /> Remove
+                              </Button>
+                            )}
                           </div>
-                          <Button type="button" variant="ghost" size="sm" className="text-destructive shrink-0" onClick={() => removeLinkFromMatching(logicIdx, linkIdx)}>
-                            <Trash2 className="h-4 w-4" />
+                          {variation.identifierFields.map((pair, critIdx) => {
+                            const fromFieldsCur = DOC_TYPE_FIELDS[fromType ?? "PO"] ?? []
+                            const toFieldsCur = DOC_TYPE_FIELDS[toType ?? "INV"] ?? []
+                            return (
+                              <div key={critIdx} className="flex items-center gap-2 flex-wrap">
+                                <Select
+                                  value={pair.fromField}
+                                  onValueChange={(fromField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, fromField, pair.toField)}
+                                >
+                                  <SelectTrigger className="w-36 bg-card">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {fromFieldsCur.map((f) => (
+                                      <SelectItem key={f.path} value={f.path}>{f.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <span className="text-muted-foreground text-sm">↔</span>
+                                <Select
+                                  value={pair.toField}
+                                  onValueChange={(toField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, pair.fromField, toField)}
+                                >
+                                  <SelectTrigger className="w-36 bg-card">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {toFieldsCur.map((f) => (
+                                      <SelectItem key={f.path} value={f.path}>{f.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {variation.identifierFields.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive h-8"
+                                    onClick={() => removeCriteriaFromVariation(logicIdx, linkIdx, varIdx, critIdx)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            )
+                          })}
+                          <Button type="button" variant="ghost" size="sm" onClick={() => addCriteriaToVariation(logicIdx, linkIdx, varIdx)}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            Add criteria
                           </Button>
                         </div>
-                        {link.criteriaVariations.map((variation, varIdx) => (
-                          <div key={varIdx} className="rounded bg-muted/20 p-2 space-y-2 ml-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-muted-foreground">Variation {varIdx + 1}</span>
-                              {link.criteriaVariations.length > 1 && (
-                                <Button type="button" variant="ghost" size="sm" className="text-destructive h-7 text-xs" onClick={() => removeVariationFromLink(logicIdx, linkIdx, varIdx)}>
-                                  <Trash2 className="h-3 w-3 mr-1" /> Remove
-                                </Button>
-                              )}
-                            </div>
-                            {variation.identifierFields.map((pair, critIdx) => {
-                              const fromFieldsCur = DOC_TYPE_FIELDS[fromType ?? "PO"] ?? []
-                              const toFieldsCur = DOC_TYPE_FIELDS[toType ?? "INV"] ?? []
-                              return (
-                                <div key={critIdx} className="flex items-center gap-2 flex-wrap">
-                                  <Select
-                                    value={pair.fromField}
-                                    onValueChange={(fromField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, fromField, pair.toField)}
-                                  >
-                                    <SelectTrigger className="w-36 bg-card">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {fromFieldsCur.map((f) => (
-                                        <SelectItem key={f.path} value={f.path}>{f.label}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <span className="text-muted-foreground text-sm">↔</span>
-                                  <Select
-                                    value={pair.toField}
-                                    onValueChange={(toField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, pair.fromField, toField)}
-                                  >
-                                    <SelectTrigger className="w-36 bg-card">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {toFieldsCur.map((f) => (
-                                        <SelectItem key={f.path} value={f.path}>{f.label}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  {variation.identifierFields.length > 1 && (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-destructive h-8"
-                                      onClick={() => removeCriteriaFromVariation(logicIdx, linkIdx, varIdx, critIdx)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                            <Button type="button" variant="ghost" size="sm" onClick={() => addCriteriaToVariation(logicIdx, linkIdx, varIdx)}>
-                              <Plus className="h-4 w-4 mr-1" />
-                              Add criteria
-                            </Button>
-                          </div>
-                        ))}
-                        <Button type="button" variant="ghost" size="sm" onClick={() => addVariationToLink(logicIdx, linkIdx)}>
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add variation
-                        </Button>
-                      </div>
-                    )
-                  })}
-                  <Button type="button" variant="outline" size="sm" onClick={() => addLinkToMatching(logicIdx)}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add link
-                  </Button>
+                      ))}
+                      <Button type="button" variant="ghost" size="sm" onClick={() => addVariationToLink(logicIdx, linkIdx)}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add variation
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
         {step === 3 && (
           <div className="flex-1 overflow-auto space-y-4">
             <p className="text-sm text-muted-foreground">
-              Define how groups in a set are compared (not necessarily linked). Select groups and which fields to compare.
+              Define how groups in a set are compared (not necessarily linked). Select groups and one field per group to compare.
             </p>
             <Button type="button" variant="outline" size="sm" onClick={addComparisonLogic} disabled={groups.length < 2}>
               <Plus className="h-4 w-4 mr-1" />
@@ -584,18 +565,7 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
             </Button>
             {comparisonLogics.map((comp, idx) => (
               <div key={idx} className="rounded-lg border p-4 space-y-3">
-                <Input
-                  value={comp.name}
-                  onChange={(e) =>
-                    setComparisonLogics((prev) => {
-                      const n = [...prev]
-                      n[idx] = { ...n[idx], name: e.target.value }
-                      return n
-                    })
-                  }
-                  placeholder="Comparison name (e.g. GRN vs PO quantities)"
-                  className="font-medium"
-                />
+                <span className="font-medium block">Comparison {idx + 1}</span>
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">Groups to compare</p>
                   <div className="flex flex-wrap gap-3 mb-2">
@@ -616,7 +586,7 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Fields to compare (per group)</p>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Field to compare (per group) — pick one per group</p>
                   {comp.groupIds.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Select groups above first.</p>
                   ) : (
@@ -625,26 +595,23 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                         const g = groups.find((gr) => gr.id === gid)
                         const docType = g ? getDocTypeForGroup(g) : "PO"
                         const fields = DOC_TYPE_FIELDS[docType ?? "PO"] ?? []
+                        const selectedField = comp.compareFields.find((cf) => cf.groupId === gid)?.fieldPath
                         return (
                           <div key={gid} className="rounded border bg-muted/20 p-2">
                             <p className="text-xs font-medium mb-2">{g?.name ?? gid}</p>
-                            <div className="flex flex-wrap gap-3">
-                              {fields.map((f) => {
-                                const isChecked = comp.compareFields.some(
-                                  (cf) => cf.groupId === gid && cf.fieldPath === f.path
-                                )
-                                return (
-                                  <label key={f.path} className="flex items-center gap-2 cursor-pointer text-sm">
-                                    <Checkbox
-                                      checked={isChecked}
-                                      onCheckedChange={(checked) =>
-                                        toggleComparisonField(idx, gid, f.path, f.label, !!checked)
-                                      }
-                                    />
-                                    {f.label}
-                                  </label>
-                                )
-                              })}
+                            <div className="flex flex-col gap-1.5">
+                              {fields.map((f) => (
+                                <label key={f.path} className="flex items-center gap-2 cursor-pointer text-sm">
+                                  <input
+                                    type="radio"
+                                    name={`comp-${idx}-group-${gid}`}
+                                    checked={selectedField === f.path}
+                                    onChange={() => setComparisonFieldForGroup(idx, gid, f.path, f.label)}
+                                    className="h-4 w-4 border-input accent-primary"
+                                  />
+                                  {f.label}
+                                </label>
+                              ))}
                             </div>
                           </div>
                         )
