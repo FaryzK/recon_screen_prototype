@@ -99,17 +99,6 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
     setMatchingLogics((prev) => prev.filter((_, i) => i !== logicIndex))
   }
 
-  const removeLinkFromMatching = (logicIndex: number, linkIndex: number) => {
-    setMatchingLogics((prev) => {
-      const next = [...prev]
-      next[logicIndex] = {
-        ...next[logicIndex],
-        links: next[logicIndex].links.filter((_, i) => i !== linkIndex),
-      }
-      return next
-    })
-  }
-
   const removeVariationFromLink = (logicIndex: number, linkIndex: number, variationIndex: number) => {
     const link = matchingLogics[logicIndex]?.links[linkIndex]
     if (!link || link.criteriaVariations.length <= 1) return
@@ -264,19 +253,6 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
       const existing = next[compIndex].compareFields
       const kept = existing.filter((f) => groupIds.includes(f.groupId))
       next[compIndex] = { ...next[compIndex], groupIds, compareFields: kept }
-      return next
-    })
-  }
-
-  const toggleComparisonField = (compIndex: number, groupId: string, fieldPath: string, label: string, checked: boolean) => {
-    setComparisonLogics((prev) => {
-      const next = [...prev]
-      const fields = next[compIndex].compareFields
-      if (checked) {
-        next[compIndex].compareFields = [...fields, { groupId, fieldPath, label }]
-      } else {
-        next[compIndex].compareFields = fields.filter((f) => !(f.groupId === groupId && f.fieldPath === fieldPath))
-      }
       return next
     })
   }
