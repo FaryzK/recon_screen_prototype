@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from "react"
 import type { ReconciliationRule, ReconSet } from "@/types/data"
 import { MOCK_RULES } from "@/data/mockRules"
-import { MOCK_SETS } from "@/data/mockRules"
+import { MOCK_SETS, getDocumentIdsByGroupForVariations } from "@/data/mockRules"
 
 interface ReconState {
   rules: ReconciliationRule[]
@@ -12,6 +12,7 @@ interface ReconContextValue extends ReconState {
   addRule: (rule: Omit<ReconciliationRule, "id">) => void
   updateSetDocuments: (setId: string, groupId: string, documentIds: string[]) => void
   setSetStatus: (setId: string, status: ReconSet["status"]) => void
+  updateSetLinkVariation: (setId: string, linkKey: string, variationIndex: number) => void
   getSetsForRule: (ruleId: string) => ReconSet[]
 }
 
@@ -46,6 +47,28 @@ export function ReconProvider({ children }: { children: React.ReactNode }) {
     )
   }, [])
 
+  const updateSetLinkVariation = useCallback(
+    (setId: string, linkKeyVal: string, variationIndex: number) => {
+      setSets((prev) => {
+        const rule = rules.find((r) => r.id === prev.find((s) => s.id === setId)?.ruleId)
+        return prev.map((s) => {
+          if (s.id !== setId) return s
+          const newSelections = { ...(s.linkVariationSelections ?? {}), [linkKeyVal]: variationIndex }
+          const documentIdsByGroup =
+            rule
+              ? getDocumentIdsByGroupForVariations(
+                  { ...s, linkVariationSelections: newSelections },
+                  rule,
+                  newSelections
+                )
+              : s.documentIdsByGroup
+          return { ...s, linkVariationSelections: newSelections, documentIdsByGroup }
+        })
+      })
+    },
+    [rules]
+  )
+
   const getSetsForRule = useCallback(
     (ruleId: string) => sets.filter((s) => s.ruleId === ruleId),
     [sets]
@@ -57,6 +80,7 @@ export function ReconProvider({ children }: { children: React.ReactNode }) {
     addRule,
     updateSetDocuments,
     setSetStatus,
+    updateSetLinkVariation,
     getSetsForRule,
   }
 

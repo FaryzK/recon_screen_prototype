@@ -75,14 +75,10 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
 
   const addMatchingLogic = () => {
     if (groups.length < 2) return
-    const anchor = anchorGroupId || groups[0].id
+    const anchor = (anchorGroupId || groups[0]?.id) ?? ""
     setMatchingLogics((prev) => [
       ...prev,
-      {
-        name: `Matching ${prev.length + 1}`,
-        anchorGroupId: anchor,
-        links: [],
-      },
+      { name: `Matching ${prev.length + 1}`, anchorGroupId: anchor, links: [] },
     ])
     if (!anchorGroupId) setAnchorGroupId(anchor)
   }
@@ -98,9 +94,67 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
         ...next[logicIndex],
         links: [
           ...next[logicIndex].links,
-          { fromGroupId: fromId, toGroupId: toId, identifierFields: [{ fromField: "poNumber", toField: "poNumber" }] },
+          {
+            fromGroupId: fromId,
+            toGroupId: toId,
+            criteriaVariations: [{ identifierFields: [{ fromField: "poNumber", toField: "poNumber" }] }],
+          },
         ],
       }
+      return next
+    })
+  }
+
+  const removeMatchingLogic = (logicIndex: number) => {
+    setMatchingLogics((prev) => prev.filter((_, i) => i !== logicIndex))
+  }
+
+  const removeLinkFromMatching = (logicIndex: number, linkIndex: number) => {
+    setMatchingLogics((prev) => {
+      const next = [...prev]
+      next[logicIndex] = {
+        ...next[logicIndex],
+        links: next[logicIndex].links.filter((_, i) => i !== linkIndex),
+      }
+      return next
+    })
+  }
+
+  const removeVariationFromLink = (logicIndex: number, linkIndex: number, variationIndex: number) => {
+    const link = matchingLogics[logicIndex]?.links[linkIndex]
+    if (!link || link.criteriaVariations.length <= 1) return
+    setMatchingLogics((prev) => {
+      const next = [...prev]
+      const logics = [...next[logicIndex].links]
+      const variations = logics[linkIndex].criteriaVariations.filter((_, i) => i !== variationIndex)
+      logics[linkIndex] = { ...logics[linkIndex], criteriaVariations: variations }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
+      return next
+    })
+  }
+
+  const addVariationToLink = (logicIndex: number, linkIndex: number) => {
+    const link = matchingLogics[logicIndex]?.links[linkIndex]
+    if (!link) return
+    const fromGroup = groups.find((g) => g.id === link.fromGroupId)
+    const toGroup = groups.find((g) => g.id === link.toGroupId)
+    const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
+    const toType = toGroup ? getDocTypeForGroup(toGroup) : "INV"
+    const fromFields = DOC_TYPE_FIELDS[fromType ?? "PO"] ?? []
+    const toFields = DOC_TYPE_FIELDS[toType ?? "INV"] ?? []
+    const fromField = fromFields[0]?.path ?? "poNumber"
+    const toField = toFields[0]?.path ?? "poNumber"
+    setMatchingLogics((prev) => {
+      const next = [...prev]
+      const logics = [...next[logicIndex].links]
+      logics[linkIndex] = {
+        ...logics[linkIndex],
+        criteriaVariations: [
+          ...logics[linkIndex].criteriaVariations,
+          { identifierFields: [{ fromField, toField }] },
+        ],
+      }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
       return next
     })
   }
@@ -116,12 +170,22 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
       const toFields = DOC_TYPE_FIELDS[toType ?? "INV"] ?? []
       const fromField = fromFields[0]?.path ?? "poNumber"
       const toField = toFields[0]?.path ?? "poNumber"
-      const existing = next[logicIndex].links[linkIndex].identifierFields
-      next[logicIndex].links[linkIndex] = {
+      const logics = [...next[logicIndex].links]
+      const existingVariations = logics[linkIndex].criteriaVariations
+      logics[linkIndex] = {
         fromGroupId,
         toGroupId,
-        identifierFields: existing.length > 0 ? existing : [{ fromField, toField }],
+        criteriaVariations:
+          existingVariations.length > 0
+            ? existingVariations.map((v) => ({
+                identifierFields:
+                  v.identifierFields.length > 0
+                    ? v.identifierFields
+                    : [{ fromField, toField }],
+              }))
+            : [{ identifierFields: [{ fromField, toField }] }],
       }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
       return next
     })
   }
@@ -129,25 +193,28 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
   const updateOneCriterion = (
     logicIndex: number,
     linkIndex: number,
+    variationIndex: number,
     criterionIndex: number,
     fromField: string,
     toField: string
   ) => {
     setMatchingLogics((prev) => {
       const next = [...prev]
-      const fields = [...next[logicIndex].links[linkIndex].identifierFields]
+      const logics = [...next[logicIndex].links]
+      const variations = [...logics[linkIndex].criteriaVariations]
+      const fields = [...variations[variationIndex].identifierFields]
       fields[criterionIndex] = { fromField, toField }
-      next[logicIndex].links[linkIndex] = {
-        ...next[logicIndex].links[linkIndex],
-        identifierFields: fields,
-      }
+      variations[variationIndex] = { identifierFields: fields }
+      logics[linkIndex] = { ...logics[linkIndex], criteriaVariations: variations }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
       return next
     })
   }
 
-  const addCriteriaToLink = (logicIndex: number, linkIndex: number) => {
+  const addCriteriaToVariation = (logicIndex: number, linkIndex: number, variationIndex: number) => {
     const link = matchingLogics[logicIndex]?.links[linkIndex]
-    if (!link) return
+    const variation = link?.criteriaVariations[variationIndex]
+    if (!link || !variation) return
     const fromGroup = groups.find((g) => g.id === link.fromGroupId)
     const toGroup = groups.find((g) => g.id === link.toGroupId)
     const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
@@ -158,22 +225,33 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
     const toField = toFields[0]?.path ?? "poNumber"
     setMatchingLogics((prev) => {
       const next = [...prev]
-      next[logicIndex].links[linkIndex] = {
-        ...next[logicIndex].links[linkIndex],
-        identifierFields: [...next[logicIndex].links[linkIndex].identifierFields, { fromField, toField }],
+      const logics = [...next[logicIndex].links]
+      const variations = [...logics[linkIndex].criteriaVariations]
+      variations[variationIndex] = {
+        identifierFields: [...variations[variationIndex].identifierFields, { fromField, toField }],
       }
+      logics[linkIndex] = { ...logics[linkIndex], criteriaVariations: variations }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
       return next
     })
   }
 
-  const removeCriteriaFromLink = (logicIndex: number, linkIndex: number, criterionIndex: number) => {
+  const removeCriteriaFromVariation = (
+    logicIndex: number,
+    linkIndex: number,
+    variationIndex: number,
+    criterionIndex: number
+  ) => {
     setMatchingLogics((prev) => {
       const next = [...prev]
-      const fields = next[logicIndex].links[linkIndex].identifierFields.filter((_, i) => i !== criterionIndex)
-      next[logicIndex].links[linkIndex] = {
-        ...next[logicIndex].links[linkIndex],
+      const logics = [...next[logicIndex].links]
+      const variations = [...logics[linkIndex].criteriaVariations]
+      const fields = variations[variationIndex].identifierFields.filter((_, i) => i !== criterionIndex)
+      variations[variationIndex] = {
         identifierFields: fields.length > 0 ? fields : [{ fromField: "poNumber", toField: "poNumber" }],
       }
+      logics[linkIndex] = { ...logics[linkIndex], criteriaVariations: variations }
+      next[logicIndex] = { ...next[logicIndex], links: logics }
       return next
     })
   }
@@ -218,10 +296,11 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
     addRule({
       name: ruleName.trim(),
       groups,
+      anchorGroupId: (anchorGroupId || groups[0]?.id) ?? "",
       matchingLogics: matchingLogics.map((m, i) => ({
         id: `match-${Date.now()}-${i}`,
         name: m.name,
-        anchorGroupId: anchorGroupId || m.anchorGroupId,
+        anchorGroupId: (anchorGroupId || m.anchorGroupId) ?? "",
         links: m.links,
       })),
       comparisonLogics: comparisonLogics.map((c, i) => ({
@@ -342,41 +421,47 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
               </Select>
             </div>
             <p className="text-sm text-muted-foreground">
-              Define how document groups are linked. For each link, choose From/To group and one or more criteria (e.g. PO Number + Vendor in PO ↔ PO Number + Company Name in Invoice).
+              Add matching logics; each has links. For each link pick from/to groups and define one or more criteria variations (each variation = set of field pairs to match on).
             </p>
-            <Button type="button" variant="outline" size="sm" onClick={addMatchingLogic} disabled={groups.length < 2}>
+            <Button type="button" variant="outline" size="sm" onClick={() => addMatchingLogic()} disabled={groups.length < 2}>
               <Plus className="h-4 w-4 mr-1" />
               Add matching logic
             </Button>
-            {matchingLogics.map((logic, idx) => (
-                <div key={idx} className="rounded-lg border p-4 space-y-3">
+            {matchingLogics.map((logic, logicIdx) => (
+              <div key={logicIdx} className="rounded-lg border-2 border-primary/20 p-4 space-y-3">
+                <div className="flex items-center gap-2">
                   <Input
                     value={logic.name}
                     onChange={(e) =>
                       setMatchingLogics((prev) => {
                         const n = [...prev]
-                        n[idx] = { ...n[idx], name: e.target.value }
+                        n[logicIdx] = { ...n[logicIdx], name: e.target.value }
                         return n
                       })
                     }
-                    placeholder="Matching logic name"
-                    className="font-medium"
+                    placeholder="Matching logic name (e.g. By PO number)"
+                    className="font-medium flex-1"
                   />
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Links (from group → to group, with criteria)</p>
-                    {logic.links.map((link, linkIdx) => {
-                      const fromGroup = groups.find((g) => g.id === link.fromGroupId)
-                      const toGroup = groups.find((g) => g.id === link.toGroupId)
-                      const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
-                      const toType = toGroup ? getDocTypeForGroup(toGroup) : "INV"
-                      return (
-                        <div key={linkIdx} className="rounded border bg-muted/30 p-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => removeMatchingLogic(logicIdx)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Links (from group → to group). Each link can have multiple criteria variations.</p>
+                  {logic.links.map((link, linkIdx) => {
+                    const fromGroup = groups.find((g) => g.id === link.fromGroupId)
+                    const toGroup = groups.find((g) => g.id === link.toGroupId)
+                    const fromType = fromGroup ? getDocTypeForGroup(fromGroup) : "PO"
+                    const toType = toGroup ? getDocTypeForGroup(toGroup) : "INV"
+                    return (
+                      <div key={linkIdx} className="rounded border bg-muted/30 p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="grid grid-cols-2 gap-2 flex-1">
                             <div>
                               <p className="text-xs text-muted-foreground mb-1">From group</p>
                               <Select
                                 value={link.fromGroupId}
-                                onValueChange={(v) => updateLinkGroups(idx, linkIdx, v, link.toGroupId)}
+                                onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, v, link.toGroupId)}
                               >
                                 <SelectTrigger className="w-full bg-card">
                                   <SelectValue />
@@ -392,7 +477,7 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                               <p className="text-xs text-muted-foreground mb-1">To group</p>
                               <Select
                                 value={link.toGroupId}
-                                onValueChange={(v) => updateLinkGroups(idx, linkIdx, link.fromGroupId, v)}
+                                onValueChange={(v) => updateLinkGroups(logicIdx, linkIdx, link.fromGroupId, v)}
                               >
                                 <SelectTrigger className="w-full bg-card">
                                   <SelectValue />
@@ -405,16 +490,28 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                               </Select>
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium text-muted-foreground">Criteria (match on all)</p>
-                            {link.identifierFields.map((pair, critIdx) => {
+                          <Button type="button" variant="ghost" size="sm" className="text-destructive shrink-0" onClick={() => removeLinkFromMatching(logicIdx, linkIdx)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {link.criteriaVariations.map((variation, varIdx) => (
+                          <div key={varIdx} className="rounded bg-muted/20 p-2 space-y-2 ml-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-muted-foreground">Variation {varIdx + 1}</span>
+                              {link.criteriaVariations.length > 1 && (
+                                <Button type="button" variant="ghost" size="sm" className="text-destructive h-7 text-xs" onClick={() => removeVariationFromLink(logicIdx, linkIdx, varIdx)}>
+                                  <Trash2 className="h-3 w-3 mr-1" /> Remove
+                                </Button>
+                              )}
+                            </div>
+                            {variation.identifierFields.map((pair, critIdx) => {
                               const fromFieldsCur = DOC_TYPE_FIELDS[fromType ?? "PO"] ?? []
                               const toFieldsCur = DOC_TYPE_FIELDS[toType ?? "INV"] ?? []
                               return (
                                 <div key={critIdx} className="flex items-center gap-2 flex-wrap">
                                   <Select
                                     value={pair.fromField}
-                                    onValueChange={(fromField) => updateOneCriterion(idx, linkIdx, critIdx, fromField, pair.toField)}
+                                    onValueChange={(fromField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, fromField, pair.toField)}
                                   >
                                     <SelectTrigger className="w-36 bg-card">
                                       <SelectValue />
@@ -428,7 +525,7 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                                   <span className="text-muted-foreground text-sm">↔</span>
                                   <Select
                                     value={pair.toField}
-                                    onValueChange={(toField) => updateOneCriterion(idx, linkIdx, critIdx, pair.fromField, toField)}
+                                    onValueChange={(toField) => updateOneCriterion(logicIdx, linkIdx, varIdx, critIdx, pair.fromField, toField)}
                                   >
                                     <SelectTrigger className="w-36 bg-card">
                                       <SelectValue />
@@ -439,13 +536,13 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  {link.identifierFields.length > 1 && (
+                                  {variation.identifierFields.length > 1 && (
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="sm"
                                       className="text-destructive h-8"
-                                      onClick={() => removeCriteriaFromLink(idx, linkIdx, critIdx)}
+                                      onClick={() => removeCriteriaFromVariation(logicIdx, linkIdx, varIdx, critIdx)}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -453,20 +550,25 @@ export function CreateRuleDialog({ open, onOpenChange }: CreateRuleDialogProps) 
                                 </div>
                               )
                             })}
-                            <Button type="button" variant="ghost" size="sm" onClick={() => addCriteriaToLink(idx, linkIdx)}>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => addCriteriaToVariation(logicIdx, linkIdx, varIdx)}>
                               <Plus className="h-4 w-4 mr-1" />
                               Add criteria
                             </Button>
                           </div>
-                        </div>
-                      )
-                    })}
-                    <Button type="button" variant="outline" size="sm" onClick={() => addLinkToMatching(idx)}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add link
-                    </Button>
-                  </div>
+                        ))}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => addVariationToLink(logicIdx, linkIdx)}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add variation
+                        </Button>
+                      </div>
+                    )
+                  })}
+                  <Button type="button" variant="outline" size="sm" onClick={() => addLinkToMatching(logicIdx)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add link
+                  </Button>
                 </div>
+              </div>
             ))}
           </div>
         )}

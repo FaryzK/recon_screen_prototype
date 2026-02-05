@@ -1,6 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom"
 import { useRecon } from "@/context/ReconContext"
 import { getRuleById, getSetById } from "@/data/mockRules"
+import type { MatchingLogic } from "@/types/data"
+import { linkKey } from "@/types/data"
 import { getDocumentById, getDocumentDisplayLabel } from "@/data/mockDocuments"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,22 +19,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// Node graph: matching links (dashed) + optional comparison edges (dotted, different color)
+// Node graph: matching links (dashed) + optional comparison edges (dotted) + anchor indicator
 function NodeGraph({
   rule,
   set,
   onSelectGroup,
   selectedGroupId,
   selectedComparisonLogicId,
+  anchorGroupId,
 }: {
   rule: ReconciliationRule
   set: ReconSet
   onSelectGroup: (id: string | null) => void
   selectedGroupId: string | null
   selectedComparisonLogicId: string | null
+  anchorGroupId: string
 }) {
   const groups = rule.groups
-  const matchingLogic = rule.matchingLogics.find((m) => m.id === set.matchingLogicId)
+  const matchingLogic: MatchingLogic | undefined = rule.matchingLogics?.find((m) => m.id === set.matchingLogicId)
   const links = matchingLogic?.links ?? []
   const comparisonLogic = selectedComparisonLogicId
     ? rule.comparisonLogics.find((c) => c.id === selectedComparisonLogicId)
@@ -138,6 +142,7 @@ function NodeGraph({
           if (!pos) return null
           const count = set.documentIdsByGroup[g.id]?.length ?? 0
           const isSelected = selectedGroupId === g.id
+          const isAnchor = g.id === anchorGroupId
           return (
             <g
               key={g.id}
@@ -149,12 +154,22 @@ function NodeGraph({
                 cy={pos.y}
                 r="34"
                 fill="hsl(var(--card))"
-                stroke={isSelected ? "hsl(var(--ring))" : "hsl(var(--primary))"}
-                strokeWidth={isSelected ? 4 : 2}
+                stroke={isSelected ? "hsl(var(--ring))" : isAnchor ? "hsl(var(--primary))" : "hsl(var(--primary))"}
+                strokeWidth={isSelected ? 4 : isAnchor ? 3 : 2}
               />
+              {isAnchor && (
+                <text
+                  x={pos.x}
+                  y={pos.y - 22}
+                  textAnchor="middle"
+                  className="text-[10px] font-semibold fill-primary"
+                >
+                  Anchor
+                </text>
+              )}
               <text
                 x={pos.x}
-                y={pos.y - 5}
+                y={pos.y - (isAnchor ? 8 : 5)}
                 textAnchor="middle"
                 className="text-sm font-medium fill-foreground"
               >
@@ -162,7 +177,7 @@ function NodeGraph({
               </text>
               <text
                 x={pos.x}
-                y={pos.y + 12}
+                y={pos.y + (isAnchor ? 18 : 12)}
                 textAnchor="middle"
                 className="text-xs fill-muted-foreground"
               >
@@ -179,7 +194,7 @@ function NodeGraph({
 export function SetDetail() {
   const { ruleId, setId } = useParams<{ ruleId: string; setId: string }>()
   const navigate = useNavigate()
-  const { rules, getSetsForRule, updateSetDocuments, setSetStatus } = useRecon()
+  const { rules, getSetsForRule, updateSetDocuments, setSetStatus, updateSetLinkVariation } = useRecon()
   const rule = ruleId ? rules.find((r) => r.id === ruleId) ?? getRuleById(ruleId!) : null
   const sets = ruleId ? getSetsForRule(ruleId) : []
   const set = setId ? sets.find((s) => s.id === setId) ?? getSetById(setId) : null
@@ -197,6 +212,8 @@ export function SetDetail() {
     )
   }
 
+  const matchingLogic = rule.matchingLogics?.find((m) => m.id === set.matchingLogicId)
+  const links = matchingLogic?.links ?? []
   const selectedGroup = selectedGroupId ? rule.groups.find((g) => g.id === selectedGroupId) : null
   const docIdsInGroup = selectedGroupId ? set.documentIdsByGroup[selectedGroupId] ?? [] : []
   const selectedComparison = selectedComparisonLogicId
@@ -238,15 +255,73 @@ export function SetDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Link graph</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Nodes are document groups; dashed edges are matching links. Change criteria variation per link below to see different matches (vertices stay visible even when doc count is 0).
+              </p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <NodeGraph
                 rule={rule}
                 set={set}
                 onSelectGroup={setSelectedGroupId}
                 selectedGroupId={selectedGroupId}
                 selectedComparisonLogicId={selectedComparisonLogicId}
+                anchorGroupId={rule.anchorGroupId}
               />
+              {matchingLogic && links.length > 0 && (
+                <div className="rounded-lg border bg-muted/10 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold">Link criteria (variation per link)</h4>
+                  <p className="text-xs text-muted-foreground">
+                    For each link, choose which criteria variation to use. Changing the variation updates which documents match (e.g. invoice count can change).
+                  </p>
+                  <ul className="space-y-2 list-none p-0 m-0">
+                    {links.map((link) => {
+                      const key = linkKey(link.fromGroupId, link.toGroupId)
+                      const fromName = rule.groups.find((g) => g.id === link.fromGroupId)?.name ?? link.fromGroupId
+                      const toName = rule.groups.find((g) => g.id === link.toGroupId)?.name ?? link.toGroupId
+                      const selectedIdx = set.linkVariationSelections?.[key] ?? 0
+                      const safeIdx = Math.min(selectedIdx, Math.max(0, link.criteriaVariations.length - 1))
+                      const variation = link.criteriaVariations[safeIdx]
+                      const toCount = set.documentIdsByGroup[link.toGroupId]?.length ?? 0
+                      return (
+                        <li key={key} className="flex flex-col gap-1.5 rounded-md border bg-card p-3">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <span className="text-sm font-medium">{fromName} → {toName}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {toName}: {toCount} doc{toCount !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Select
+                              value={String(safeIdx)}
+                              onValueChange={(v) => updateSetLinkVariation(set.id, key, parseInt(v, 10))}
+                            >
+                              <SelectTrigger className="w-[14rem] bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {link.criteriaVariations.map((_, i) => (
+                                  <SelectItem key={i} value={String(i)}>
+                                    Variation {i + 1}
+                                    {link.criteriaVariations[i].identifierFields.length > 0 && (
+                                      <> — {link.criteriaVariations[i].identifierFields.map((f) => `${f.fromField}↔${f.toField}`).join(", ")}</>
+                                    )}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {variation && (
+                              <span className="text-xs text-muted-foreground">
+                                Criteria: {variation.identifierFields.map((f) => `${f.fromField}↔${f.toField}`).join(", ")}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card>

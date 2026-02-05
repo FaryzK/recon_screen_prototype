@@ -85,14 +85,19 @@ export interface ReconGroup {
   queueIds: string[]
 }
 
-// Link: how two groups are matched (which fields to use)
-export interface MatchLink {
-  fromGroupId: string
-  toGroupId: string
+// One criteria variation for a link (a set of identifier field pairs)
+export interface CriteriaVariation {
   identifierFields: { fromField: string; toField: string }[]
 }
 
-// Matching logic: a set of links that define how documents form a set
+// Link: how two groups are matched; can have multiple criteria variations
+export interface MatchLink {
+  fromGroupId: string
+  toGroupId: string
+  criteriaVariations: CriteriaVariation[]
+}
+
+// Matching logic: a set of links that define how documents form a set (anchor comes from rule)
 export interface MatchingLogic {
   id: string
   name: string
@@ -113,11 +118,17 @@ export interface ReconciliationRule {
   id: string
   name: string
   groups: ReconGroup[]
+  anchorGroupId: string
   matchingLogics: MatchingLogic[]
   comparisonLogics: ComparisonLogic[]
 }
 
-// A "set" = one anchor document + all documents linked to it under a matching logic
+/** Key for a link (fromGroupId-toGroupId) for use in linkVariationSelections */
+export function linkKey(fromGroupId: string, toGroupId: string): string {
+  return `${fromGroupId}-${toGroupId}`
+}
+
+// A "set" = one anchor document + all documents linked under a matching logic
 export interface ReconSet {
   id: string
   ruleId: string
@@ -126,6 +137,8 @@ export interface ReconSet {
   anchorDocType: DocType
   documentIdsByGroup: Record<string, string[]>
   status: "pending" | "reconciled" | "rejected" | "force_reconciled"
+  /** Which criteria variation is selected per link; key = linkKey(from, to), value = variation index */
+  linkVariationSelections?: Record<string, number>
   comparisonResults?: ComparisonResult[]
 }
 

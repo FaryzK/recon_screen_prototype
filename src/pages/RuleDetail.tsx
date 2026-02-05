@@ -68,8 +68,7 @@ export function RuleDetail() {
                         >
                           <td className="p-3 font-medium">{anchorLabel}</td>
                           <td className="p-3 text-muted-foreground">
-                            {totalDocs} document(s) across{" "}
-                            {Object.keys(s.documentIdsByGroup).length} groups
+                            {totalDocs} document(s) across {Object.keys(s.documentIdsByGroup).length} groups
                           </td>
                           <td className="p-3">
                             <Badge
